@@ -9,6 +9,10 @@
   let error = '';
   let editingId: number | null = null;
 
+  let selected = new Set<number>();
+  let batchStatus: MillStatus = 'idle';
+  let batchBusy = false;
+
   let form = {
     workshopId: '',
     millCode: '',
@@ -83,16 +87,48 @@
     if (!confirm('确认删除该研磨机？')) return;
     try {
       await api(`/mills/${id}`, { method: 'DELETE' });
+      selected.delete(id);
+      selected = selected;
       await load();
     } catch (e) {
       error = e instanceof Error ? e.message : '删除失败';
+    }
+  }
+
+  function toggle(id: number, checked: boolean) {
+    const next = new Set(selected);
+    if (checked) next.add(id);
+    else next.delete(id);
+    selected = next;
+  }
+
+  function toggleAll(checked: boolean) {
+    selected = checked ? new Set(rows.map((r) => r.id)) : new Set();
+  }
+
+  async function applyBatch() {
+    if (selected.size === 0 || batchBusy) return;
+    error = '';
+    batchBusy = true;
+    try {
+      // 失败时后端返回中文错误，本地行不做任何改动
+      await api<{ updated: number }>('/mills/batch-status', {
+        method: 'POST',
+        body: JSON.stringify({ millIds: [...selected], status: batchStatus }),
+      });
+      selected = new Set();
+      await load();
+    } catch (e) {
+      error = e instanceof Error ? e.message : '批量更新失败';
+    } finally {
+      batchBusy = false;
     }
   }
 </script>
 
 <header class="page-head">
   <h1>研磨机</h1>
-  <p>机台编号在同一车间内唯一，状态：研磨 / 待机 / 清洗</p>
+  <p>机台编号在同一车间内唯一，状态：研磨 / 待机 / 清洗；同一车间最多一台研磨中</p>
 </header>
 
 {#if error}
@@ -133,9 +169,30 @@
 </section>
 
 <section class="panel">
+  <div class="batch-bar">
+    <span class="muted">已选 {selected.size} 台</span>
+    <select bind:value={batchStatus} aria-label="批量目标状态">
+      <option value="grinding">研磨中</option>
+      <option value="idle">待机</option>
+      <option value="wash">清洗</option>
+    </select>
+    <button
+      class="btn-primary"
+      disabled={selected.size === 0 || batchBusy}
+      on:click={applyBatch}
+    >{batchBusy ? '提交中…' : '批量设置状态'}</button>
+  </div>
   <table class="data-table">
     <thead>
       <tr>
+        <th>
+          <input
+            type="checkbox"
+            aria-label="全选"
+            checked={rows.length > 0 && selected.size === rows.length}
+            on:change={(e) => toggleAll(e.currentTarget.checked)}
+          />
+        </th>
         <th>ID</th>
         <th>车间</th>
         <th>编号</th>
@@ -148,6 +205,14 @@
     <tbody>
       {#each rows as row}
         <tr>
+          <td>
+            <input
+              type="checkbox"
+              aria-label="选择 {row.millCode}"
+              checked={selected.has(row.id)}
+              on:change={(e) => toggle(row.id, e.currentTarget.checked)}
+            />
+          </td>
           <td>{row.id}</td>
           <td>{workshopName(row.workshopId)}</td>
           <td>{row.millCode}</td>
@@ -160,7 +225,7 @@
           </td>
         </tr>
       {:else}
-        <tr><td colspan="7">暂无数据</td></tr>
+        <tr><td colspan="8">暂无数据</td></tr>
       {/each}
     </tbody>
   </table>

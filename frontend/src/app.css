@@ -111,6 +111,25 @@ textarea {
   border-color: var(--vermillion-700);
 }
 
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.batch-bar select {
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: white;
+  padding: 0.45rem 0.6rem;
+}
+
+.batch-bar .btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .actions {
   margin-top: 0.9rem;
   display: flex;

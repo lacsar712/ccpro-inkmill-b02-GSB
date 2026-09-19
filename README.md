@@ -36,6 +36,22 @@ MySQL 连接：`inkmill` / `inkmill` / `inkmill`（库名/用户/密码）
 4. **GrindPass**：`millId`, `startedAt`, `passNo`（≥ 1）, `durationMin`（&gt; 0）, `mediaType`, `operatorName`
 5. **Dashboard**：`workshopTotal`, `grindingMillCount`, `samplesLast24h`, `passesLast7d`
 
+## 研磨机状态机
+
+`status` 写入前一律归一为 `grinding` / `idle` / `wash`。合法跳转仅限下表：
+
+| 当前状态 | 允许的目标状态 |
+|----------|----------------|
+| `idle`（待机） | `grinding`、`wash` |
+| `grinding`（研磨中） | `wash`、`idle` |
+| `wash`（清洗） | `idle` |
+
+- 其它跳转（如 `wash → grinding`）一律返回 **409**，错误信息为中文并带 `millCode`。
+- **车间互斥**：同一车间同时最多一台 `status=grinding`。单条或批量更新导致违反则整次失败（409）。
+- 单条更新（`PUT /api/mills/{id}`）与批量更新（`POST /api/mills/batch-status`）共用同一套校验规则；批量中任一机台失败则**整批回滚**，库中状态保持原样。
+- 批量接口：body 为 `{"millIds": [1, 2], "status": "wash"}`。空 `millIds`、非法 `status`、或部分 id 不存在都会失败且不写入任何数据；成功返回 `{"updated": n}`。
+- 写入归一化保证 `GET /api/mills` 列表中 `grinding` 行数与 Dashboard 的 `grindingMillCount` 始终一致。
+
 ## 快速启动（Docker）
 
 ```bash
