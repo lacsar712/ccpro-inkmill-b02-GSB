@@ -9,6 +9,9 @@
   let error = '';
   let editingId: number | null = null;
 
+  let selected = new Set<number>();
+  let batchStatus: MillStatus = 'idle';
+
   let form = {
     workshopId: '',
     millCode: '',
@@ -83,16 +86,54 @@
     if (!confirm('确认删除该研磨机？')) return;
     try {
       await api(`/mills/${id}`, { method: 'DELETE' });
+      selected.delete(id);
+      selected = selected;
       await load();
     } catch (e) {
       error = e instanceof Error ? e.message : '删除失败';
+    }
+  }
+
+  function toggle(id: number) {
+    if (selected.has(id)) {
+      selected.delete(id);
+    } else {
+      selected.add(id);
+    }
+    selected = selected;
+  }
+
+  function toggleAll() {
+    if (selected.size === rows.length) {
+      selected = new Set();
+    } else {
+      selected = new Set(rows.map((r) => r.id));
+    }
+  }
+
+  async function applyBatch() {
+    error = '';
+    if (selected.size === 0) {
+      error = '请先勾选要批量更新的研磨机';
+      return;
+    }
+    try {
+      // 校验全部在服务端完成；失败时不改动本地行，仅展示后端中文错误
+      await api<{ updated: number }>('/mills/batch-status', {
+        method: 'POST',
+        body: JSON.stringify({ millIds: [...selected], status: batchStatus }),
+      });
+      selected = new Set();
+      await load();
+    } catch (e) {
+      error = e instanceof Error ? e.message : '批量更新失败';
     }
   }
 </script>
 
 <header class="page-head">
   <h1>研磨机</h1>
-  <p>机台编号在同一车间内唯一，状态：研磨 / 待机 / 清洗</p>
+  <p>机台编号在同一车间内唯一；状态机：待机→研磨/清洗，研磨→清洗/待机，清洗→待机；同一车间最多一台研磨中</p>
 </header>
 
 {#if error}
@@ -133,9 +174,31 @@
 </section>
 
 <section class="panel">
+  <h2>批量状态切换</h2>
+  <div class="actions">
+    <span>已选 {selected.size} 台</span>
+    <select bind:value={batchStatus}>
+      <option value="grinding">研磨中</option>
+      <option value="idle">待机</option>
+      <option value="wash">清洗</option>
+    </select>
+    <button class="btn-primary" on:click={applyBatch} disabled={selected.size === 0}>
+      批量更新状态
+    </button>
+  </div>
+</section>
+
+<section class="panel">
   <table class="data-table">
     <thead>
       <tr>
+        <th>
+          <input
+            type="checkbox"
+            checked={rows.length > 0 && selected.size === rows.length}
+            on:change={toggleAll}
+          />
+        </th>
         <th>ID</th>
         <th>车间</th>
         <th>编号</th>
@@ -148,6 +211,13 @@
     <tbody>
       {#each rows as row}
         <tr>
+          <td>
+            <input
+              type="checkbox"
+              checked={selected.has(row.id)}
+              on:change={() => toggle(row.id)}
+            />
+          </td>
           <td>{row.id}</td>
           <td>{workshopName(row.workshopId)}</td>
           <td>{row.millCode}</td>
@@ -160,7 +230,7 @@
           </td>
         </tr>
       {:else}
-        <tr><td colspan="7">暂无数据</td></tr>
+        <tr><td colspan="8">暂无数据</td></tr>
       {/each}
     </tbody>
   </table>
